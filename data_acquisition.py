@@ -1,21 +1,12 @@
 import random
 import csv
-import numpy as np
+import os
 
 def generate_bodies(n_bodies, bounds=(-100, 100), mass_range=(1, 100)):
     """
-    Generates n_bodies bodies with random positions, velocities, and masses..
-    
-    Args:
-        n_bodies: number of bodies to be generated
-        bounds: tuples (min, max) for position and velocity coordinates
-        mass_range: tuples (min, max) for the mass of the bodies
-    
-    Returns:
-        list of dictionaries, each dictionary representing a body
+    Generates n_bodies bodies with random positions, velocities, and masses.
     """
     bodies = []
-    
     for i in range(n_bodies):
         body = {
             'id': i,
@@ -26,29 +17,24 @@ def generate_bodies(n_bodies, bounds=(-100, 100), mass_range=(1, 100)):
                 'z': random.uniform(bounds[0], bounds[1])
             },
             'velocity': {
-                'x': random.uniform(bounds[0]/10, bounds[1]/10),  # smaller speeds
-                'y': random.uniform(bounds[0]/10, bounds[1]/10),
-                'z': random.uniform(bounds[0]/10, bounds[1]/10)
+                'x': random.uniform(bounds[0] / 10, bounds[1] / 10),
+                'y': random.uniform(bounds[0] / 10, bounds[1] / 10),
+                'z': random.uniform(bounds[0] / 10, bounds[1] / 10)
             }
         }
         bodies.append(body)
-    
     return bodies
 
 def save_bodies_to_file(bodies, filename):
     """
-    Save the bodies to a CSV file.
-    
-    Args:
-        bodies: list of bodies to save
-        filename: CSV output file name
+    Save the bodies to a CSV file in the dataset folder.
     """
-    
-    with open(filename, 'w', newline='') as f:
+    os.makedirs("dataset", exist_ok=True)
+    filepath = os.path.join("dataset", filename)
+
+    with open(filepath, 'w', newline='') as f:
         writer = csv.writer(f)
-        # Header
         writer.writerow(['id', 'mass', 'pos_x', 'pos_y', 'pos_z', 'vel_x', 'vel_y', 'vel_z'])
-        # Data
         for body in bodies:
             writer.writerow([
                 body['id'], body['mass'],
@@ -58,16 +44,11 @@ def save_bodies_to_file(bodies, filename):
 
 def load_bodies_from_file(filename):
     """
-    Upload bodies from a CSV file.
-    
-    Args:
-        filename: input CSV file name
-    
-    Returns:
-        list of bodies
+    Load bodies from a CSV file in the dataset folder.
     """
+    filepath = os.path.join("dataset", filename)
     bodies = []
-    with open(filename, 'r') as f:
+    with open(filepath, 'r') as f:
         reader = csv.DictReader(f)
         for row in reader:
             body = {
@@ -89,22 +70,14 @@ def load_bodies_from_file(filename):
 
 # Example of use
 if __name__ == "__main__":
-    # Generate different datasets for testing
     test_sizes = [10, 100, 500, 1000, 2000, 3000, 5000, 10000]
-    
     for n in test_sizes:
         print(f"Generando {n} corpi...")
-        
-        # Generate the bodies
         bodies = generate_bodies(n)
-        
-        # Save in CSV format
         filename = f'bodies_{n}.csv'
         save_bodies_to_file(bodies, filename)
-        
-        print(f"Saved dataset with {n} bodies in {filename}")
-    
-    # Loading test
+        print(f"Saved dataset with {n} bodies in dataset/{filename}")
+
     print("\nLoading test...")
     bodies_test = load_bodies_from_file('bodies_100.csv')
     print(f"Loaded {len(bodies_test)} bodies from CSV file")
