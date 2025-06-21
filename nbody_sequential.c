@@ -191,7 +191,7 @@ int main(int argc, char* argv[]) {
     clock_t end = clock();
     double cpu_time_used = ((double)(end - start)) / CLOCKS_PER_SEC;
     
-    printf("Execution time: %.6f seconds\n", cpu_time_used);
+    printf("Execution time for sequential: %.6f seconds\n", cpu_time_used);
     printf("Time to calculate forces per step: %.6f seconds\n", cpu_time_used / steps);
     
     // Save the final results
