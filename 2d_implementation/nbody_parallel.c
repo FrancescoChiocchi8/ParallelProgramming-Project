@@ -13,7 +13,9 @@ typedef struct {
     double mass;
     double pos_x, pos_y;
     double vel_x, vel_y;
+    double prev_pos_x, prev_pos_y;  // Previous positions for Verlet
     double force_x, force_y;
+    int first_step;  // Flag to indicate if it's the first step
 } Body;
 
 // PHASE 1: PARTITIONING - Force partitioning
@@ -92,8 +94,14 @@ int read_csv(const char* filename, Body** bodies) {
                    &(*bodies)[i].pos_x, &(*bodies)[i].pos_y,
                    &(*bodies)[i].vel_x, &(*bodies)[i].vel_y);
             
+            // Initialize forces to zero
             (*bodies)[i].force_x = 0.0;
             (*bodies)[i].force_y = 0.0;
+            
+            // Initialize previous positions (not used in first step)
+            (*bodies)[i].prev_pos_x = 0.0;
+            (*bodies)[i].prev_pos_y = 0.0;
+            (*bodies)[i].first_step = 1;
         }
     }
     
@@ -148,29 +156,55 @@ void reduce_forces(double* local_forces_x, double* local_forces_y,
     MPI_Allreduce(local_forces_y, global_forces_y, total_n, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
 }
 
-// Update positions and speed (each process updates all bodies, 2D version)
-void update_bodies_synchronized(Body* bodies, int total_n, 
-                               double* global_forces_x, double* global_forces_y,
-                               double dt) {
+// Update positions and velocities using Verlet integration (2D version)
+void update_bodies_verlet(Body* bodies, int total_n, 
+                         double* global_forces_x, double* global_forces_y,
+                         double dt) {
     for (int i = 0; i < total_n; i++) {
-        // Update velocity
-        bodies[i].vel_x += (global_forces_x[i] / bodies[i].mass) * dt;
-        bodies[i].vel_y += (global_forces_y[i] / bodies[i].mass) * dt;
+        if (bodies[i].first_step) {
+            // For the first step, use Euler to calculate the previous position
+            double acc_x = global_forces_x[i] / bodies[i].mass;
+            double acc_y = global_forces_y[i] / bodies[i].mass;
+            
+            // Save current position as previous
+            bodies[i].prev_pos_x = bodies[i].pos_x;
+            bodies[i].prev_pos_y = bodies[i].pos_y;
+            
+            // Calculate new position using modified Euler
+            bodies[i].pos_x += bodies[i].vel_x * dt + 0.5 * acc_x * dt * dt;
+            bodies[i].pos_y += bodies[i].vel_y * dt + 0.5 * acc_y * dt * dt;
+            
+            // Update velocity
+            bodies[i].vel_x += acc_x * dt;
+            bodies[i].vel_y += acc_y * dt;
+            
+            bodies[i].first_step = 0;
+        } else {
+            // Use Verlet integration for subsequent steps
+            double acc_x = global_forces_x[i] / bodies[i].mass;
+            double acc_y = global_forces_y[i] / bodies[i].mass;
+            
+            // Save current position
+            double temp_pos_x = bodies[i].pos_x;
+            double temp_pos_y = bodies[i].pos_y;
+            
+            // Calculate new position using Verlet
+            bodies[i].pos_x = 2.0 * bodies[i].pos_x - bodies[i].prev_pos_x + acc_x * dt * dt;
+            bodies[i].pos_y = 2.0 * bodies[i].pos_y - bodies[i].prev_pos_y + acc_y * dt * dt;
+            
+            // Update previous position
+            bodies[i].prev_pos_x = temp_pos_x;
+            bodies[i].prev_pos_y = temp_pos_y;
+            
+            // Calculate velocity using position difference
+            bodies[i].vel_x = (bodies[i].pos_x - bodies[i].prev_pos_x) / (2.0 * dt);
+            bodies[i].vel_y = (bodies[i].pos_y - bodies[i].prev_pos_y) / (2.0 * dt);
+        }
         
-        // Update position
-        bodies[i].pos_x += bodies[i].vel_x * dt;
-        bodies[i].pos_y += bodies[i].vel_y * dt;
-        
-        // Upgrade the forces in the body structure
+        // Update forces in the body structure
         bodies[i].force_x = global_forces_x[i];
         bodies[i].force_y = global_forces_y[i];
     }
-}
-
-// Synchronized broadcast of positions
-void synchronize_positions(Body* bodies, int total_n, int rank) {
-    // Each process already has all positions updated identically
-    // This eliminates the need for additional communication
 }
 
 void print_bodies(Body* bodies, int n, int rank) {
@@ -232,7 +266,8 @@ int main(int argc, char* argv[]) {
             MPI_Abort(MPI_COMM_WORLD, 1);
         }
         printf("Read %d bodies from file %s\n", total_n, argv[1]);
-        printf("Using %d MPI processes\n\n", size);
+        printf("Using %d MPI processes\n", size);
+        printf("Using Verlet integration method\n\n");
     }
     
     // Broadcast of the number of bodies
@@ -274,9 +309,9 @@ int main(int argc, char* argv[]) {
         reduce_forces(local_forces_x, local_forces_y,
                      global_forces_x, global_forces_y, total_n);
         
-        // Synchronized updating of positions and speeds
-        update_bodies_synchronized(bodies, total_n, 
-                                 global_forces_x, global_forces_y, dt);
+        // Synchronized updating of positions and velocities using Verlet
+        update_bodies_verlet(bodies, total_n, 
+                           global_forces_x, global_forces_y, dt);
         
         // Periodic print
         if (step % 20 == 0 && rank == 0) {

@@ -114,6 +114,25 @@ def calculate_metrics(df):
     
     return pd.DataFrame(results)
 
+# Karp-Flatt Metric for Scalability
+def scalability_karpflatt(ax4, metrics_df):
+    """Karp-Flatt Metric: Estimates the Serial Fraction of the Code"""
+    for dataset in metrics_df['dataset_2d'].unique():
+        data = metrics_df[metrics_df['dataset_2d'] == dataset]
+        processors = np.array(data['processors'])
+        speedup = np.array(data['speedup'])
+        
+        # Karp-Flatt: e = (1/speedup - 1/processors) / (1 - 1/processors)
+        karp_flatt = (1/speedup - 1/processors) / (1 - 1/processors)
+        ax4.plot(processors, karp_flatt, 'o-', label=dataset, linewidth=2, markersize=6)
+    
+    ax4.set_xlabel('Number of Processors')
+    ax4.set_ylabel('Serial Fraction (Karp-Flatt)')
+    ax4.set_title('Karp-Flatt Metric: Estimated Serial Fraction')
+    ax4.legend()
+    ax4.grid(True, alpha=0.3)
+    ax4.set_ylim(0, 1)
+
 def create_plots(metrics_df):
     """Create speedup and efficiency plots"""
     if metrics_df.empty:
@@ -154,8 +173,8 @@ def create_plots(metrics_df):
     for dataset in datasets:
         data = metrics_df[metrics_df['dataset_2d'] == dataset]
         processors = data['processors'].to_numpy()
-        speedup = data['speedup'].to_numpy()
-        ax1.plot(processors, speedup, 'o-', label=dataset, linewidth=2, markersize=6)
+        efficiency = data['efficiency'].to_numpy()
+        ax2.plot(processors, efficiency, 'o-', label=dataset, linewidth=2, markersize=6)
     
     # Ideal line efficiency = 1
     ax2.axhline(y=1.0, color='k', linestyle='--', alpha=0.7, label='Ideal Efficiency')
@@ -200,20 +219,7 @@ def create_plots(metrics_df):
     
     # Scalability analysis
     ax4 = plt.subplot(2, 2, 4)
-    for dataset in datasets:
-        data = metrics_df[metrics_df['dataset_2d'] == dataset]
-        processors = np.array(data['processors'])
-        speedup = np.array(data['speedup'])
-        speedup_ratio = speedup / processors
-        ax4.plot(processors, speedup_ratio, 'o-', label=dataset, linewidth=2, markersize=6)
-    
-    ax4.axhline(y=1.0, color='k', linestyle='--', alpha=0.7, label='Perfect Scaling')
-    ax4.set_xlabel('Number of Processors')
-    ax4.set_ylabel('Normalized Speedup')
-    ax4.set_title('Scalability Analysis')
-    ax4.legend()
-    ax4.grid(True, alpha=0.3)
-    ax4.set_xticks(range(2, max_proc + 1))
+    scalability_karpflatt(ax4, metrics_df)
     
     plt.tight_layout()
     plt.savefig(os.path.join(PLOTS_DIR, 'nbody_performance_analysis.png'), 
