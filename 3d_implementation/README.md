@@ -1,2 +1,2 @@
-# ParallelProgramming-Project
-Repository for Parallel Programming 2024/25 - UNICAM
+# Parallel Programming Project
+Implementation of the nbody problem in 3D.

@@ -212,12 +212,12 @@ int main(int argc, char* argv[]) {
     for (int step = 0; step < steps; step++) {
         calculate_forces(bodies, n);
         update_bodies_verlet(bodies, n, dt);
-        
+        /*
         // Print every 20 steps
         if (step % 20 == 0) {
             printf("Step %d:\n", step);
             print_bodies(bodies, n);
-        }
+        }*/
     }
     
     clock_t end = clock();

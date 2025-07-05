@@ -44,7 +44,7 @@ def load_bodies_from_file(filename):
     """
     Load bodies from a CSV file in the dataset folder (2D version).
     """
-    filepath = os.path.join("dataset", filename)
+    filepath = os.path.join("dataset_2d", filename)
     bodies = []
     with open(filepath, 'r') as f:
         reader = csv.DictReader(f)
