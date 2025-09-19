@@ -6,16 +6,13 @@
 #include <mpi.h>
 
 #define G 6.67430e-11  // Gravitational constant
-#define EPSILON 1e-9   // Softening parameter to avoid divisions by zero
 
 typedef struct {
     int id;
     double mass;
     double pos_x, pos_y;
     double vel_x, vel_y;
-    double prev_pos_x, prev_pos_y;  // Previous positions for Verlet integration
     double force_x, force_y;
-    int first_step;  // Flag to indicate if it's the first integration step
 } Body;
 
 // Read body data from CSV file (only root process)
@@ -53,18 +50,16 @@ int read_csv(const char* filename, Body** bodies) {
                    &(*bodies)[i].pos_x, &(*bodies)[i].pos_y,
                    &(*bodies)[i].vel_x, &(*bodies)[i].vel_y);
             
-            // Initialize forces and previous positions
+            // Initialize forces
             (*bodies)[i].force_x = 0.0;
             (*bodies)[i].force_y = 0.0;
-            (*bodies)[i].prev_pos_x = 0.0;
-            (*bodies)[i].prev_pos_y = 0.0;
-            (*bodies)[i].first_step = 1;
         }
     }
     
     fclose(file);
     return n;
 }
+
 
 // Calculate gravitational forces between all bodies (parallel computation)
 void calculate_forces(Body* bodies, int total_n, int rank, int size,
@@ -83,15 +78,15 @@ void calculate_forces(Body* bodies, int total_n, int rank, int size,
             double dx = bodies[j].pos_x - bodies[i].pos_x;
             double dy = bodies[j].pos_y - bodies[i].pos_y;
             
-            double dist_squared = dx*dx + dy*dy + EPSILON*EPSILON;
+            double dist_squared = dx*dx + dy*dy;
             double dist = sqrt(dist_squared);
-            double dist_cubed = dist_squared * dist;
             
-            // Calculate gravitational force magnitude
-            double force_magnitude = G * bodies[i].mass * bodies[j].mass / dist_cubed;
+            // Calculate gravitational force using Newton's formula: F = G * m1 * m2 / r²
+            double force_magnitude = G * bodies[i].mass * bodies[j].mass / dist_squared;
             
-            double force_x = force_magnitude * dx;
-            double force_y = force_magnitude * dy;
+            // Components of the force (normalized by distance)
+            double force_x = force_magnitude * dx / dist;
+            double force_y = force_magnitude * dy / dist;
             
             // Apply Newton's third law: F_ij = -F_ji
             local_forces_x[i] += force_x;
@@ -112,50 +107,22 @@ void reduce_forces(double* local_forces_x, double* local_forces_y,
     MPI_Allreduce(local_forces_y, global_forces_y, total_n, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
 }
 
-// Update positions and velocities using Verlet integration
-void update_bodies_verlet(Body* bodies, int total_n, 
-                         double* global_forces_x, double* global_forces_y,
-                         double dt) {
+// Update positions and velocities using Euler integration
+void update_bodies_euler(Body* bodies, int total_n, 
+                        double* global_forces_x, double* global_forces_y,
+                        double dt) {
     for (int i = 0; i < total_n; i++) {
-        if (bodies[i].first_step) {
-            // First step: use modified Euler method to establish previous position
-            double acc_x = global_forces_x[i] / bodies[i].mass;
-            double acc_y = global_forces_y[i] / bodies[i].mass;
-            
-            // Save current position as previous
-            bodies[i].prev_pos_x = bodies[i].pos_x;
-            bodies[i].prev_pos_y = bodies[i].pos_y;
-            
-            // Calculate new position using modified Euler
-            bodies[i].pos_x += bodies[i].vel_x * dt + 0.5 * acc_x * dt * dt;
-            bodies[i].pos_y += bodies[i].vel_y * dt + 0.5 * acc_y * dt * dt;
-            
-            // Update velocity
-            bodies[i].vel_x += acc_x * dt;
-            bodies[i].vel_y += acc_y * dt;
-            
-            bodies[i].first_step = 0;
-        } else {
-            // Subsequent steps: use Verlet integration
-            double acc_x = global_forces_x[i] / bodies[i].mass;
-            double acc_y = global_forces_y[i] / bodies[i].mass;
-            
-            // Save current position
-            double temp_pos_x = bodies[i].pos_x;
-            double temp_pos_y = bodies[i].pos_y;
-            
-            // Calculate new position using Verlet formula
-            bodies[i].pos_x = 2.0 * bodies[i].pos_x - bodies[i].prev_pos_x + acc_x * dt * dt;
-            bodies[i].pos_y = 2.0 * bodies[i].pos_y - bodies[i].prev_pos_y + acc_y * dt * dt;
-            
-            // Update previous position
-            bodies[i].prev_pos_x = temp_pos_x;
-            bodies[i].prev_pos_y = temp_pos_y;
-            
-            // Calculate velocity using centered difference
-            bodies[i].vel_x = (bodies[i].pos_x - bodies[i].prev_pos_x) / (2.0 * dt);
-            bodies[i].vel_y = (bodies[i].pos_y - bodies[i].prev_pos_y) / (2.0 * dt);
-        }
+        // Calcola l'accelerazione: a = F/m
+        double acc_x = global_forces_x[i] / bodies[i].mass;
+        double acc_y = global_forces_y[i] / bodies[i].mass;
+        
+        // Aggiorna la velocità: v_new = v_old + a * dt
+        bodies[i].vel_x += acc_x * dt;
+        bodies[i].vel_y += acc_y * dt;
+        
+        // Aggiorna la posizione: x_new = x_old + v * dt
+        bodies[i].pos_x += bodies[i].vel_x * dt;
+        bodies[i].pos_y += bodies[i].vel_y * dt;
         
         // Update forces in the body structure
         bodies[i].force_x = global_forces_x[i];
@@ -225,7 +192,7 @@ int main(int argc, char* argv[]) {
         }
         printf("Read %d bodies from file %s\n", total_n, argv[1]);
         printf("Using %d MPI processes\n", size);
-        printf("Using Verlet integration method\n\n");
+        printf("Using Euler integration method\n\n");
     }
     
     // Broadcast number of bodies to all processes
@@ -268,8 +235,8 @@ int main(int argc, char* argv[]) {
         reduce_forces(local_forces_x, local_forces_y,
                      global_forces_x, global_forces_y, total_n);
         
-        // Update positions and velocities using Verlet integration
-        update_bodies_verlet(bodies, total_n, 
+        // Update positions and velocities using Euler integration
+        update_bodies_euler(bodies, total_n, 
                            global_forces_x, global_forces_y, dt);
     }
     

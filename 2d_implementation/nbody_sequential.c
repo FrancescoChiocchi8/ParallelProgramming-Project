@@ -5,16 +5,13 @@
 #include <time.h>
 
 #define G 6.67430e-11  // Gravitational constant
-#define EPSILON 1e-9   // Softening parameter to avoid divisions by zero
 
 typedef struct {
     int id;
     double mass;
     double pos_x, pos_y;
     double vel_x, vel_y;
-    double prev_pos_x, prev_pos_y;  // Posizioni precedenti per Verlet
     double force_x, force_y;
-    int first_step;  // Flag per indicare se è il primo step
 } Body;
 
 // Function to read data from CSV file (2D version)
@@ -57,11 +54,6 @@ int read_csv(const char* filename, Body** bodies) {
             // Initialize forces to zero
             (*bodies)[i].force_x = 0.0;
             (*bodies)[i].force_y = 0.0;
-            
-            // Initialize previous positions (not used in first step)
-            (*bodies)[i].prev_pos_x = 0.0;
-            (*bodies)[i].prev_pos_y = 0.0;
-            (*bodies)[i].first_step = 1;
         }
     }
     
@@ -84,16 +76,15 @@ void calculate_forces(Body* bodies, int n) {
             double dx = bodies[j].pos_x - bodies[i].pos_x;
             double dy = bodies[j].pos_y - bodies[i].pos_y;
             
-            double dist_squared = dx*dx + dy*dy + EPSILON*EPSILON;
+            double dist_squared = dx*dx + dy*dy;
             double dist = sqrt(dist_squared);
-            double dist_cubed = dist_squared * dist;
             
-            // Calculate the gravitational force
-            double force_magnitude = G * bodies[i].mass * bodies[j].mass / dist_cubed;
+            // Calculate the gravitational force using Newton's formula: F = G * m1 * m2 / r²
+            double force_magnitude = G * bodies[i].mass * bodies[j].mass / dist_squared;
             
-            // Components of the force
-            double force_x = force_magnitude * dx;
-            double force_y = force_magnitude * dy;
+            // Components of the force (normalized by distance)
+            double force_x = force_magnitude * dx / dist;
+            double force_y = force_magnitude * dy / dist;
             
             // Applies Newton's third law of motion
             bodies[i].force_x += force_x;
@@ -105,48 +96,20 @@ void calculate_forces(Body* bodies, int n) {
     }
 }
 
-// Function to update positions and velocities (Verlet integration, 2D)
-void update_bodies_verlet(Body* bodies, int n, double dt) {
+// Function to update positions and velocities (Euler integration, 2D)
+void update_bodies_euler(Body* bodies, int n, double dt) {
     for (int i = 0; i < n; i++) {
-        if (bodies[i].first_step) {
-            // Per il primo step, usa Euler per calcolare la posizione precedente
-            double acc_x = bodies[i].force_x / bodies[i].mass;
-            double acc_y = bodies[i].force_y / bodies[i].mass;
-            
-            // Salva la posizione attuale come precedente
-            bodies[i].prev_pos_x = bodies[i].pos_x;
-            bodies[i].prev_pos_y = bodies[i].pos_y;
-            
-            // Calcola la nuova posizione usando Euler modificato
-            bodies[i].pos_x += bodies[i].vel_x * dt + 0.5 * acc_x * dt * dt;
-            bodies[i].pos_y += bodies[i].vel_y * dt + 0.5 * acc_y * dt * dt;
-            
-            // Aggiorna la velocità
-            bodies[i].vel_x += acc_x * dt;
-            bodies[i].vel_y += acc_y * dt;
-            
-            bodies[i].first_step = 0;
-        } else {
-            // Usa l'integrazione di Verlet per i passi successivi
-            double acc_x = bodies[i].force_x / bodies[i].mass;
-            double acc_y = bodies[i].force_y / bodies[i].mass;
-            
-            // Salva la posizione attuale
-            double temp_pos_x = bodies[i].pos_x;
-            double temp_pos_y = bodies[i].pos_y;
-            
-            // Calcola la nuova posizione usando Verlet
-            bodies[i].pos_x = 2.0 * bodies[i].pos_x - bodies[i].prev_pos_x + acc_x * dt * dt;
-            bodies[i].pos_y = 2.0 * bodies[i].pos_y - bodies[i].prev_pos_y + acc_y * dt * dt;
-            
-            // Aggiorna la posizione precedente
-            bodies[i].prev_pos_x = temp_pos_x;
-            bodies[i].prev_pos_y = temp_pos_y;
-            
-            // Calcola la velocità usando la differenza di posizioni
-            bodies[i].vel_x = (bodies[i].pos_x - bodies[i].prev_pos_x) / (2.0 * dt);
-            bodies[i].vel_y = (bodies[i].pos_y - bodies[i].prev_pos_y) / (2.0 * dt);
-        }
+        // Calcola l'accelerazione: a = F/m
+        double acc_x = bodies[i].force_x / bodies[i].mass;
+        double acc_y = bodies[i].force_y / bodies[i].mass;
+        
+        // Aggiorna la velocità: v_new = v_old + a * dt
+        bodies[i].vel_x += acc_x * dt;
+        bodies[i].vel_y += acc_y * dt;
+        
+        // Aggiorna la posizione: x_new = x_old + v * dt
+        bodies[i].pos_x += bodies[i].vel_x * dt;
+        bodies[i].pos_y += bodies[i].vel_y * dt;
     }
 }
 
@@ -163,7 +126,7 @@ void print_bodies(Body* bodies, int n) {
     printf("\n");
 }
 
-// Function to save results to a CSV file (2D version)
+// Function to save results to a CSV file
 void save_results(const char* filename, Body* bodies, int n) {
     FILE* file = fopen(filename, "w");
     if (!file) {
@@ -196,7 +159,7 @@ int main(int argc, char* argv[]) {
     }
     
     printf("Read %d bodies from file %s\n\n", n, argv[1]);
-    printf("Using Verlet integration method\n\n");
+    printf("Using Euler integration method\n\n");
     
     // Simulation parameters
     double dt = 0.01;  // Time step
@@ -211,7 +174,7 @@ int main(int argc, char* argv[]) {
     // Simulation
     for (int step = 0; step < steps; step++) {
         calculate_forces(bodies, n);
-        update_bodies_verlet(bodies, n, dt);
+        update_bodies_euler(bodies, n, dt);
         /*
         // Print every 20 steps
         if (step % 20 == 0) {

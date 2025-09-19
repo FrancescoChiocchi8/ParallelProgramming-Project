@@ -1,2 +1,0 @@
-# Parallel Programming Project
-Implementation of the nbody problem in 3D.
